@@ -5,8 +5,8 @@ import ("log"
 	"flag"
 	"bufio"
 	"regexp"
-	"Bowery/prompt"
-	"boltdb/bolt"
+	"github.com/Bowery/prompt"
+	"github.com/boltdb/bolt"
 )
 
 // Parse the given block count file, populate and return a new database
@@ -28,6 +28,7 @@ func parse2db(countFile string, newDB string) error {
 	// create the line parsing regexps
 	blre := regexp.MustCompile(`^\s*block\s*:\s*(\w+)\s*$`) // blocknames - block: <blockname>
 	clre := regexp.MustCompile(`^\s*(\w+)\s*:\s*(\d+)\s*$`) // device counts - <deviceName>: <count>
+	comre := regexp.MustCompile(`#.*$`) // comments
 
 	terr := db.Update(func(tx *bolt.Tx) error {
 
@@ -37,17 +38,31 @@ func parse2db(countFile string, newDB string) error {
 		var bucket = bolt.Bucket{}
 		for scanner.Scan() {
 			line := scanner.Text()
-			bsm := blre.FindStringSubmatch(line) // look for block starts
-			if bsm != nil { // start of a new block
+
+			// strip comments
+			nocLine := comre.ReplaceAllString(line, "")
+
+			// look for block starts
+			if bsm := blre.FindStringSubmatch(nocLine) ; bsm != nil { // start of a new block
 				block := bsm[1] // 0 is the whole match
-				berr, bucket := tx.CreateBucket([]byte(block))
+				berr, bucket := tx.CreateBucketIfNotExists([]byte(block))
+				if berr != nil {
+					return fmt.Errorf("Error creating/opening bucet for block %s: %v", block, err)
+				}
+			} else if csm := clre.FindStringSubmatch(nocLine) ; csm != nil { // device count for current block
+				device := csm[1]
+				cnt := csm[2]
+				perr := bucket.Put([]byte(device), []byte(cnt))
+				if perr != nil {
+					return fmt.Errorf("Put error for key %s, val %s: %v", device, cnt, perr)
+				}
 			}
 		}
 		if serr := scanner.Err(); serr != nil {
 			return fmt.Errorf("Error reading file %s: %v", countFile, serr)
 		}
 
-		return nil
+		return nil // commit the transaction
 	})
 	if terr != nil {
 		return fmt.Errorf("Error creating read/write db transaction for db file %s and count file %s: %v", 
