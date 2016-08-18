@@ -6,7 +6,7 @@ import ("log"
 	"bufio"
 	"os"
 	"regexp"
-	//"github.com/Bowery/prompt"
+	"github.com/Bowery/prompt"
 	"github.com/boltdb/bolt"
 )
 
@@ -78,6 +78,49 @@ func parse2db(countFile string, newDB string) error {
 
 // open an interactive command line to query the provided db
 func dbInteract(dbName string) error {
+
+	// open the database
+	db, err := bolt.Open(dbName, 0600, nil)
+	if err != nil {
+		return fmt.Errorf("dbInteract error opening supplied database file %s: %v", dbName, err)
+	}
+
+	// create regexp to parse inputs
+	lre := regexp.MustCompile(`^\s*(\w+)\s*$`) // single works only - blockname or quit
+
+	// create a read-only transaction
+	terr := db.View(func(tx *bolt.Tx) error {
+
+		// command prompt loop - exit on q or quit or exit
+		for { // only exit via return
+			resp, perr := prompt.Basic("db> ", true)
+			if perr != nil {
+				return fmt.Errorf("dbInteract error prompting for db %s: %v", dbName, perr)
+			}
+			if lsm := lre.FindStringSubmatch(resp) ; lsm != nil { // single word - comand or exit
+				word := lsm[1]
+				if (word == "quit") || (word == "q") || (word == "exit") {
+					return nil
+				}
+
+				// it must be a blockname, which must match a bucket name.  look up the counts.
+				b := tx.Bucket([]byte(word))
+				if b == nil {
+					fmt.Printf("Error, %s does not exist in the database", word)
+				} else {
+					c := b.Cursor()
+					
+					for k, v := c.First(); k != nil; k, v = c.Next() {
+						fmt.Printf("%s: %s\n", k, v)
+					}
+				} 
+			}
+		}
+	})
+	if terr != nil {
+		return fmt.Errorf("Error creating read-only transaction in database %s: %v", dbName, terr)
+	}
+
 	return nil // normal exit, no error
 }
 
