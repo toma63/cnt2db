@@ -95,6 +95,11 @@ func dbInteract(dbName string) error {
 		for { // only exit via return
 			resp, perr := prompt.Basic("db> ", true)
 			if perr != nil {
+				// catch ctl-c and ctl-d for exit
+				eString := perr.Error()
+				if (eString == "Interrupted (CTRL+C)") || (eString == "EOF (CTRL+D)") {
+					return nil // normal exit
+				}
 				return fmt.Errorf("dbInteract error prompting for db %s: %v", dbName, perr)
 			}
 			if lsm := lre.FindStringSubmatch(resp) ; lsm != nil { // single word - comand or exit
@@ -106,10 +111,9 @@ func dbInteract(dbName string) error {
 				// it must be a blockname, which must match a bucket name.  look up the counts.
 				b := tx.Bucket([]byte(word))
 				if b == nil {
-					fmt.Printf("Error, %s does not exist in the database", word)
+					fmt.Printf("Error, %s does not exist in the database\n", word)
 				} else {
 					c := b.Cursor()
-					
 					for k, v := c.First(); k != nil; k, v = c.Next() {
 						fmt.Printf("%s: %s\n", k, v)
 					}
