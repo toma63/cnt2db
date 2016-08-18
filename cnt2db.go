@@ -4,8 +4,9 @@ import ("log"
 	"fmt"
 	"flag"
 	"bufio"
+	"os"
 	"regexp"
-	"github.com/Bowery/prompt"
+	//"github.com/Bowery/prompt"
 	"github.com/boltdb/bolt"
 )
 
@@ -30,12 +31,13 @@ func parse2db(countFile string, newDB string) error {
 	clre := regexp.MustCompile(`^\s*(\w+)\s*:\s*(\d+)\s*$`) // device counts - <deviceName>: <count>
 	comre := regexp.MustCompile(`#.*$`) // comments
 
+	// create the transaction
 	terr := db.Update(func(tx *bolt.Tx) error {
 
 		// parse the file by line
-		scanner := bufio.NewScanner(os.Stdin)
+		scanner := bufio.NewScanner(cfd)
 		block := ""
-		var bucket = bolt.Bucket{}
+		var bucket *bolt.Bucket // empty placeholder to start, holds current bucket
 		for scanner.Scan() {
 			line := scanner.Text()
 
@@ -44,8 +46,9 @@ func parse2db(countFile string, newDB string) error {
 
 			// look for block starts
 			if bsm := blre.FindStringSubmatch(nocLine) ; bsm != nil { // start of a new block
-				block := bsm[1] // 0 is the whole match
-				berr, bucket := tx.CreateBucketIfNotExists([]byte(block))
+				block = bsm[1] // 0 is the whole match
+				var berr error
+				bucket, berr = tx.CreateBucketIfNotExists([]byte(block))
 				if berr != nil {
 					return fmt.Errorf("Error creating/opening bucet for block %s: %v", block, err)
 				}
@@ -61,7 +64,6 @@ func parse2db(countFile string, newDB string) error {
 		if serr := scanner.Err(); serr != nil {
 			return fmt.Errorf("Error reading file %s: %v", countFile, serr)
 		}
-
 		return nil // commit the transaction
 	})
 	if terr != nil {
@@ -69,11 +71,14 @@ func parse2db(countFile string, newDB string) error {
 			newDB, countFile, err)
 	}
 
-	Defer db.Close()
+	defer db.Close()
+
+	return nil // normal exit, no error
 }
 
 // open an interactive command line to query the provided db
 func dbInteract(dbName string) error {
+	return nil // normal exit, no error
 }
 
 func main() {
@@ -101,7 +106,7 @@ func main() {
 		}
 	} else {
 		// create new database from count file
-		if *cFile != nil {
+		if *cFile != "" {
 			err := parse2db(*cFile, *odb)
 			if err != nil {
 				log.Fatalf("Error creating database file %s from count file %s: %v\n", *odb, *cFile, err)
@@ -109,4 +114,5 @@ func main() {
 		} else {
 			fmt.Println("Usage: cnt2db -i <database> or cnt2db -cf <countFile> -wdb <new database>")
 		}
+	}
 }
