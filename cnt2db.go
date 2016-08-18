@@ -3,12 +3,58 @@ package main
 import ("log"
 	"fmt"
 	"flag"
+	"bufio"
+	"regexp"
 	"Bowery/prompt"
 	"boltdb/bolt"
 )
 
 // Parse the given block count file, populate and return a new database
 func parse2db(countFile string, newDB string) error {
+
+	// Create and open the database
+	db, err := bolt.Open(newDB, 0600, nil)
+	if err != nil {
+		return fmt.Errorf("parse2db error opening new database file %s: %v", newDB, err)
+	}
+
+	// open the count file for read
+	cfd, ferr := os.Open(countFile)
+	if ferr != nil {
+		return fmt.Errorf("Error opening count file %s: %v", countFile, err)
+	}
+	defer cfd.Close()
+
+	// create the line parsing regexps
+	blre := regexp.MustCompile(`^\s*block\s*:\s*(\w+)\s*$`) // blocknames - block: <blockname>
+	clre := regexp.MustCompile(`^\s*(\w+)\s*:\s*(\d+)\s*$`) // device counts - <deviceName>: <count>
+
+	terr := db.Update(func(tx *bolt.Tx) error {
+
+		// parse the file by line
+		scanner := bufio.NewScanner(os.Stdin)
+		block := ""
+		var bucket = bolt.Bucket{}
+		for scanner.Scan() {
+			line := scanner.Text()
+			bsm := blre.FindStringSubmatch(line) // look for block starts
+			if bsm != nil { // start of a new block
+				block := bsm[1] // 0 is the whole match
+				berr, bucket := tx.CreateBucket([]byte(block))
+			}
+		}
+		if serr := scanner.Err(); serr != nil {
+			return fmt.Errorf("Error reading file %s: %v", countFile, serr)
+		}
+
+		return nil
+	})
+	if terr != nil {
+		return fmt.Errorf("Error creating read/write db transaction for db file %s and count file %s: %v", 
+			newDB, countFile, err)
+	}
+
+	Defer db.Close()
 }
 
 // open an interactive command line to query the provided db
