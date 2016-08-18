@@ -79,6 +79,10 @@ func parse2db(countFile string, newDB string) error {
 // open an interactive command line to query the provided db
 func dbInteract(dbName string) error {
 
+	if _, err := os.Stat(dbName); os.IsNotExist(err) {
+		return fmt.Errorf("Error, specified database does not exist: %s", dbName)
+	}
+
 	// open the database
 	db, err := bolt.Open(dbName, 0600, nil)
 	if err != nil {
